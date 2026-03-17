@@ -18,6 +18,12 @@ param useStorageKeys bool = false
 @description('3DGS processing backend: mock, gsplat, gaussian-splatting.')
 param processorBackend string = 'mock'
 
+@description('Include RBAC role assignments in provisioning. Set to false if the deployer lacks Owner/UAA permissions.')
+param includeRbac bool = true
+
+@description('Principal ID of the deployer (signed-in user). Set automatically by preprovision hook.')
+param deployerPrincipalId string = ''
+
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
@@ -80,9 +86,44 @@ module containerAppsEnv 'modules/container-apps-env.bicep' = {
   }
 }
 
+// AcrPull is a provisioning prerequisite — Container Apps validates registry
+// credentials during job creation. Without it, provisioning times out.
+module acrPullRole 'modules/acr-pull-role.bicep' = if (includeRbac) {
+  name: 'acr-pull-role'
+  scope: rg
+  params: {
+    containerRegistryName: acr.outputs.name
+    managedIdentityPrincipalId: identity.outputs.principalId
+  }
+}
+
+// Storage Blob Data Contributor — only needed at job runtime, assigned
+// separately via scripts/assign-rbac.sh by a privileged user.
+module storageBlobRole 'modules/storage-blob-role.bicep' = if (includeRbac) {
+  name: 'storage-blob-role'
+  scope: rg
+  params: {
+    storageAccountName: storage.outputs.name
+    managedIdentityPrincipalId: identity.outputs.principalId
+  }
+}
+
+// Deployer RBAC — gives the signed-in user AcrPush + Storage Blob Data Contributor
+// so azd deploy can push images and the deployer can manage blobs.
+module deployerRoles 'modules/deployer-roles.bicep' = if (includeRbac && !empty(deployerPrincipalId)) {
+  name: 'deployer-roles'
+  scope: rg
+  params: {
+    containerRegistryName: acr.outputs.name
+    storageAccountName: storage.outputs.name
+    deployerPrincipalId: deployerPrincipalId
+  }
+}
+
 module job 'modules/container-apps-job.bicep' = {
   name: 'container-apps-job'
   scope: rg
+  dependsOn: [acrPullRole]
   params: {
     name: '${abbrs['app-jobs']}-${resourceToken}'
     location: location

@@ -16,6 +16,12 @@
     },
     "processorBackend": {
       "value": "${PROCESSOR_BACKEND=mock}"
+    },
+    "includeRbac": {
+      "value": "${INCLUDE_RBAC=true}"
+    },
+    "deployerPrincipalId": {
+      "value": "${DEPLOYER_PRINCIPAL_ID=}"
     }
   }
 }
