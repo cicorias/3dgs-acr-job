@@ -43,14 +43,18 @@ param processorBackend string = 'mock'
 
 var effectiveImage = !empty(imageName) ? imageName : 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
+// The container expects filesystem paths — it uses Azure Blob Storage via
+// AZURE_STORAGE_CONNECTION_STRING or AZURE_STORAGE_ACCOUNT_NAME + managed identity.
+// Paths are the mount points within the container's filesystem.
 var baseEnv = [
   { name: 'BACKEND', value: processorBackend }
+  { name: 'INPUT_PATH', value: '/data/input' }
+  { name: 'OUTPUT_PATH', value: '/data/output' }
+  { name: 'PROCESSED_PATH', value: '/data/processed' }
+  { name: 'ERROR_PATH', value: '/data/error' }
   { name: 'AZURE_STORAGE_ACCOUNT_NAME', value: storageAccountName }
   { name: 'AZURE_CLIENT_ID', value: managedIdentityClientId }
-  { name: 'INPUT_CONTAINER', value: 'input' }
-  { name: 'OUTPUT_CONTAINER', value: 'output' }
-  { name: 'PROCESSED_CONTAINER', value: 'processed' }
-  { name: 'ERROR_CONTAINER', value: 'error' }
+  { name: 'AZURE_CONTAINER_NAME', value: 'input' }
   { name: 'LOG_LEVEL', value: 'info' }
 ]
 
