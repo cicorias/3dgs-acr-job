@@ -27,7 +27,7 @@
       "value": "${DEPLOYER_PRINCIPAL_ID=}"
     },
     "storageExtraTags": {
-      "value": "${STORAGE_EXTRA_TAGS={\"SecurityControl\":\"Ignore\"}}"
+      "value": { "SecurityControl": "Ignore" }
     }
   }
 }
