@@ -29,7 +29,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Load azd environment values
+# Save any explicitly-set env vars before loading azd defaults
+_EXPLICIT_RG="${AZURE_RESOURCE_GROUP:-}"
+_EXPLICIT_ENV="${AZURE_CONTAINER_ENVIRONMENT_NAME:-}"
+
+# Load azd environment values (may override env vars)
 load_azd_env() {
   if command -v azd &>/dev/null; then
     eval "$(azd env get-values 2>/dev/null)" || true
@@ -38,7 +42,12 @@ load_azd_env() {
 
 load_azd_env
 
-GPU_TEST_IMAGE="mcr.microsoft.com/k8se/gpu-quickstart:latest"
+# Restore explicitly-set env vars (take precedence over azd)
+if [[ -n "$_EXPLICIT_RG" ]]; then AZURE_RESOURCE_GROUP="$_EXPLICIT_RG"; fi
+if [[ -n "$_EXPLICIT_ENV" ]]; then AZURE_CONTAINER_ENVIRONMENT_NAME="$_EXPLICIT_ENV"; fi
+
+# Use nvidia/cuda image with nvidia-smi — runs and exits (job-compatible)
+GPU_TEST_IMAGE="nvcr.io/nvidia/k8s/cuda-sample:vectoradd-cuda12.5.0"
 GPU_PROFILE_NAME="Consumption-GPU-NC8as-T4"
 GPU_JOB_NAME="gpu-verify-job"
 
