@@ -13,6 +13,9 @@ param sku string = 'Standard_LRS'
 @description('List of blob container names to create.')
 param containerNames array = ['input', 'output', 'processed', 'error']
 
+@description('Allow shared key (storage account key) access. Required for blobfuse2 mounts.')
+param allowSharedKeyAccess bool = true
+
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: name
   location: location
@@ -24,6 +27,7 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   properties: {
     accessTier: 'Hot'
     allowBlobPublicAccess: false
+    allowSharedKeyAccess: allowSharedKeyAccess
     minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: true
   }

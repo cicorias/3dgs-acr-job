@@ -28,6 +28,9 @@ param includeRbac bool = true
 @description('Principal ID of the deployer (signed-in user). Set automatically by preprovision hook.')
 param deployerPrincipalId string = ''
 
+@description('Additional tags for the storage account (e.g., SecurityControl:Ignore for key access policy bypass).')
+param storageExtraTags object = {}
+
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
@@ -74,7 +77,7 @@ module storage 'modules/storage.bicep' = {
   params: {
     name: '${abbrs.storageAccount}${resourceToken}'
     location: location
-    tags: tags
+    tags: union(tags, storageExtraTags)
   }
 }
 
