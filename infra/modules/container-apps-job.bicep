@@ -31,6 +31,9 @@ param imageName string = ''
 @description('Whether to use a GPU workload profile.')
 param useGpu bool = false
 
+@description('GPU workload profile name (from Container Apps Environment).')
+param gpuProfileName string = 'NC8as-T4'
+
 @description('Whether to use storage account keys instead of RBAC.')
 param useStorageKeys bool = false
 
@@ -91,7 +94,7 @@ resource job 'Microsoft.App/jobs@2024-03-01' = {
   }
   properties: {
     environmentId: containerAppsEnvironmentId
-    workloadProfileName: useGpu ? 'gpu' : 'Consumption'
+    workloadProfileName: useGpu ? gpuProfileName : 'Consumption'
     configuration: {
       replicaTimeout: 7200
       replicaRetryLimit: 1

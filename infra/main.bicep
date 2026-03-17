@@ -12,6 +12,10 @@ param location string
 @description('Whether to use a GPU workload profile for the job.')
 param useGpu bool = false
 
+@description('GPU workload profile type.')
+@allowed(['Consumption-GPU-NC8as-T4', 'Consumption-GPU-NC24-A100'])
+param gpuProfileType string = 'Consumption-GPU-NC8as-T4'
+
 @description('Whether to use storage account keys instead of RBAC for storage access.')
 param useStorageKeys bool = false
 
@@ -83,6 +87,7 @@ module containerAppsEnv 'modules/container-apps-env.bicep' = {
     tags: tags
     logAnalyticsWorkspaceId: monitoring.outputs.id
     useGpu: useGpu
+    gpuProfileType: gpuProfileType
   }
 }
 
@@ -135,6 +140,7 @@ module job 'modules/container-apps-job.bicep' = {
     managedIdentityClientId: identity.outputs.clientId
     storageAccountName: storage.outputs.name
     useGpu: useGpu
+    gpuProfileName: useGpu ? containerAppsEnv.outputs.gpuProfileName : ''
     useStorageKeys: useStorageKeys
     storageConnectionString: useStorageKeys ? storage.outputs.connectionString : ''
     processorBackend: processorBackend

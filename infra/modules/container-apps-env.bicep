@@ -13,6 +13,12 @@ param logAnalyticsWorkspaceId string
 @description('Whether to create a GPU-enabled dedicated workload profile.')
 param useGpu bool = false
 
+@description('GPU workload profile type. Consumption-GPU-NC8as-T4 (T4, 16GB) or Consumption-GPU-NC24-A100 (A100, 80GB).')
+@allowed(['Consumption-GPU-NC8as-T4', 'Consumption-GPU-NC24-A100'])
+param gpuProfileType string = 'Consumption-GPU-NC8as-T4'
+
+var gpuProfileName = gpuProfileType == 'Consumption-GPU-NC8as-T4' ? 'NC8as-T4' : 'NC24-A100'
+
 resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: name
   location: location
@@ -35,10 +41,8 @@ resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01'
       useGpu
         ? [
             {
-              name: 'gpu'
-              workloadProfileType: 'NC24-A100'
-              minimumCount: 0
-              maximumCount: 1
+              name: gpuProfileName
+              workloadProfileType: gpuProfileType
             }
           ]
         : []
@@ -54,3 +58,6 @@ output name string = containerAppsEnvironment.name
 
 @description('The default domain of the Container Apps Environment.')
 output defaultDomain string = containerAppsEnvironment.properties.defaultDomain
+
+@description('The GPU workload profile name (if GPU enabled).')
+output gpuProfileName string = useGpu ? gpuProfileName : ''

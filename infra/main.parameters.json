@@ -11,6 +11,9 @@
     "useGpu": {
       "value": "${USE_GPU=false}"
     },
+    "gpuProfileType": {
+      "value": "${GPU_PROFILE_TYPE=Consumption-GPU-NC8as-T4}"
+    },
     "useStorageKeys": {
       "value": "${USE_STORAGE_KEYS=false}"
     },
