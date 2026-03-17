@@ -29,15 +29,15 @@ load_azd_env() {
 load_azd_env
 
 GPU_TEST_IMAGE="mcr.microsoft.com/k8se/gpu-quickstart:latest"
-GPU_PROFILE_NAME="NC8as-T4"
-GPU_PROFILE_TYPE="Consumption-GPU-NC8as-T4"
+GPU_PROFILE_NAME="Consumption-GPU-NC8as-T4"
 GPU_JOB_NAME="gpu-verify-job"
 # T4 supported region
 GPU_LOCATION="${AZURE_LOCATION:-swedencentral}"
 
 if [[ "$STANDALONE" == "true" ]]; then
-  RG_NAME="rg-gpu-verify-${RANDOM}"
-  ENV_NAME="cae-gpu-verify"
+  SUFFIX=$RANDOM
+  RG_NAME="rg-gpu-verify-${SUFFIX}"
+  ENV_NAME="cae-gpu-verify-${SUFFIX}"
 
   echo "╔══════════════════════════════════════════════╗"
   echo "║  GPU Verification — Standalone Mode          ║"
@@ -53,19 +53,21 @@ if [[ "$STANDALONE" == "true" ]]; then
     --location "$GPU_LOCATION" \
     --output none
 
-  echo "🔧 Creating Container Apps environment..."
+  # Serverless GPU profiles must be specified at environment creation time
+  echo "🔧 Creating Container Apps environment with GPU workload profile..."
   az containerapp env create \
     --name "$ENV_NAME" \
     --resource-group "$RG_NAME" \
     --location "$GPU_LOCATION" \
+    --enable-workload-profiles true \
     --output none
 
-  echo "🔧 Adding GPU workload profile ($GPU_PROFILE_TYPE)..."
+  echo "🔧 Adding GPU workload profile ($GPU_PROFILE_NAME)..."
   az containerapp env workload-profile add \
     --name "$ENV_NAME" \
     --resource-group "$RG_NAME" \
     --workload-profile-name "$GPU_PROFILE_NAME" \
-    --workload-profile-type "$GPU_PROFILE_TYPE"
+    --workload-profile-type "$GPU_PROFILE_NAME"
 
   echo "🔧 Creating GPU verification job..."
   az containerapp job create \
@@ -105,12 +107,12 @@ else
     --output tsv 2>/dev/null || echo "")
 
   if [[ -z "$PROFILE_EXISTS" ]]; then
-    echo "⚠️  GPU workload profile not found. Adding $GPU_PROFILE_TYPE..."
+    echo "⚠️  GPU workload profile not found. Adding $GPU_PROFILE_NAME..."
     az containerapp env workload-profile add \
       --name "$ENV_NAME" \
       --resource-group "$RG_NAME" \
       --workload-profile-name "$GPU_PROFILE_NAME" \
-      --workload-profile-type "$GPU_PROFILE_TYPE"
+      --workload-profile-type "$GPU_PROFILE_NAME"
   fi
 
   # Check if test job already exists
@@ -149,6 +151,7 @@ echo "   Execution: $EXECUTION"
 echo ""
 echo "⏳ Waiting for execution to complete (up to 5 minutes)..."
 
+STATUS="Unknown"
 for i in $(seq 1 30); do
   sleep 10
   STATUS=$(az containerapp job execution show \
@@ -162,16 +165,6 @@ for i in $(seq 1 30); do
     Succeeded)
       echo ""
       echo "✅ GPU verification PASSED — NVIDIA GPU is accessible!"
-      echo ""
-      echo "📋 Fetching nvidia-smi output from logs..."
-      # Allow a few seconds for logs to propagate
-      sleep 5
-      az containerapp job logs show \
-        --name "$GPU_JOB_NAME" \
-        --resource-group "$RG_NAME" \
-        --execution "$EXECUTION" \
-        --container "$GPU_JOB_NAME" \
-        2>/dev/null || echo "   (Logs may take a minute to appear in Log Analytics)"
       break
       ;;
     Failed)
@@ -182,7 +175,7 @@ for i in $(seq 1 30); do
       break
       ;;
     *)
-      printf "   Status: %-12s (check %d/30)\r" "$STATUS" "$i"
+      printf "   Status: %-12s (check %d/30)\n" "$STATUS" "$i"
       ;;
   esac
 done

@@ -17,7 +17,8 @@ param useGpu bool = false
 @allowed(['Consumption-GPU-NC8as-T4', 'Consumption-GPU-NC24-A100'])
 param gpuProfileType string = 'Consumption-GPU-NC8as-T4'
 
-var gpuProfileName = gpuProfileType == 'Consumption-GPU-NC8as-T4' ? 'NC8as-T4' : 'NC24-A100'
+// For serverless GPU profiles, the name and type are identical
+var gpuProfileName = gpuProfileType
 
 resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: name

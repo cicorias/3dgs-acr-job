@@ -114,8 +114,8 @@ resource job 'Microsoft.App/jobs@2024-03-01' = {
           name: 'main'
           resources: useGpu
             ? {
-                cpu: json('4')
-                memory: '16Gi'
+                cpu: json('8')
+                memory: '56Gi'
               }
             : {
                 cpu: json('2')
