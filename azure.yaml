@@ -1,0 +1,16 @@
+name: 3dgs-processor
+metadata:
+  template: 3dgs-processor@0.0.1
+services:
+  job:
+    host: containerapp
+    language: docker
+    project: ./src/job
+    docker:
+      path: ./Dockerfile
+      context: .
+hooks:
+  preprovision:
+    shell: sh
+    run: ./scripts/hooks/preprovision.sh
+    continueOnError: true
