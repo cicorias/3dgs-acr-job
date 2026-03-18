@@ -42,7 +42,9 @@ No ML frameworks, no external repos. Checks nvidia-smi, CUDA libraries, and runs
 - [Azure CLI (`az`)](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
 - An Azure subscription with **Contributor** access to create resources
 
-> **Note:** Docker is _not_ required locally — `azd deploy` builds images remotely via ACR Tasks.
+> **Note:** Docker is _not_ required locally. Container images are built remotely
+> via [ACR Tasks](https://learn.microsoft.com/en-us/azure/container-registry/container-registry-tasks-overview)
+> — no local Docker daemon, build, or push needed.
 
 ## Quick Start
 
@@ -54,8 +56,8 @@ azd init
 azd env set AZURE_LOCATION swedencentral
 azd env set USE_GPU true
 
-# 3. Provision infrastructure + deploy container image
-azd up
+# 3. Provision infrastructure (also builds the image on ACR)
+azd provision
 
 # 4. (Privileged user) Assign RBAC roles to the Managed Identity
 ./scripts/assign-rbac.sh
@@ -66,6 +68,24 @@ azd up
 # 6. Run the GPU check job
 ./scripts/run-job.sh --logs
 ```
+
+### Deploying Code Changes
+
+After the initial `azd provision`, use the deploy script to rebuild and
+redeploy whenever your Dockerfile or application code changes:
+
+```bash
+./scripts/deploy-job.sh
+```
+
+This script:
+1. Builds the image remotely via ACR Tasks (`az acr build`)
+2. Deploys it via `azd deploy job --from-package`
+
+> **Why not plain `azd deploy`?** — `azd deploy` with `host: containerapp`
+> attempts a local Docker pull/push cycle. Since the CUDA base image is
+> multi-GB, we bypass that entirely with `--from-package` which sends
+> the image reference directly to Container Apps.
 
 ## Configuration
 
@@ -82,8 +102,8 @@ Set these via `azd env set <KEY> <VALUE>`:
 ### Scenario 1: Full Setup (Developer + Admin)
 
 ```bash
-# Developer provisions and deploys
-azd up
+# Developer provisions infra + builds image on ACR
+azd provision
 
 # Admin assigns RBAC (requires Owner or User Access Administrator)
 ./scripts/assign-rbac.sh
@@ -98,7 +118,7 @@ azd up
 ```bash
 # Provision with key-based storage
 azd env set USE_STORAGE_KEYS true
-azd up
+azd provision
 
 # Or configure keys post-provision
 ./scripts/configure-storage-keys.sh
@@ -112,7 +132,7 @@ azd up
 ```bash
 azd env set USE_GPU true
 azd env set AZURE_LOCATION swedencentral
-azd up
+azd provision
 ./scripts/assign-rbac.sh
 ./scripts/run-job.sh --logs
 ```
@@ -138,20 +158,29 @@ az containerapp job start \
   --resource-group <AZURE_RESOURCE_GROUP>
 ```
 
-### Scenario 5: Build Image Manually via ACR
+### Scenario 5: Redeploy After Code Changes
 
-If you need to rebuild the image without a full `azd deploy`:
+```bash
+# Rebuild on ACR + update the Container Apps Job
+./scripts/deploy-job.sh
+
+# Or deploy an existing image (skip the ACR build)
+./scripts/deploy-job.sh --skip-build
+```
+
+### Scenario 6: Build Image Manually via ACR
+
+If you need to rebuild the image without deploying:
 
 ```bash
 az acr build \
   --registry <ACR_NAME> \
-  --image gpu-check:latest \
-  --build-arg CUDA_VERSION=12.6.3 \
+  --image 3dgs-processor-job:latest \
   --file src/job/Dockerfile \
   src/job/
 ```
 
-### Scenario 6: Tear Down
+### Scenario 7: Tear Down
 
 ```bash
 # Remove RBAC first (if assigned)
@@ -218,12 +247,15 @@ No external repositories are cloned. No ML frameworks are installed.
 
 | Script | Purpose |
 |--------|---------|
+| `scripts/deploy-job.sh` | Build image on ACR + deploy to Container Apps Job |
 | `scripts/assign-rbac.sh` | Assign RBAC roles (AcrPull + Blob Contributor) to MI |
 | `scripts/verify-rbac.sh` | Verify RBAC roles are assigned |
 | `scripts/cleanup-rbac.sh` | Remove RBAC role assignments |
 | `scripts/run-job.sh` | Start a Container Apps Job execution |
 | `scripts/configure-storage-keys.sh` | Fallback: configure storage account keys on the job |
 | `scripts/hooks/preprovision.sh` | azd preprovision hook (captures deployer ID, runs RBAC check) |
+| `scripts/hooks/postprovision.sh` | azd postprovision hook (ACR build + update job) |
+| `scripts/hooks/acr-build.sh` | Shared: builds image via ACR Tasks, sets JOB_IMAGE in azd env |
 | `scripts/verify-gpu.sh` | Standalone GPU verification (creates its own ACA environment) |
 | `scripts/run-preflight.sh` | ⚠️ Legacy — clones external repo for preflight (deprecated) |
 
@@ -246,6 +278,7 @@ No external repositories are cloned. No ML frameworks are installed.
 │       ├── main.bicep                  # RBAC role assignments (separate)
 │       └── main.parameters.json
 ├── scripts/
+│   ├── deploy-job.sh                   # Build on ACR + deploy (replaces azd deploy)
 │   ├── assign-rbac.sh                  # Assign RBAC roles
 │   ├── verify-rbac.sh                  # Verify RBAC roles (preflight)
 │   ├── cleanup-rbac.sh                 # Remove RBAC roles
@@ -254,7 +287,9 @@ No external repositories are cloned. No ML frameworks are installed.
 │   ├── verify-gpu.sh                   # Standalone GPU verification
 │   ├── run-preflight.sh                # ⚠️ Legacy preflight (external repo)
 │   └── hooks/
-│       └── preprovision.sh             # azd preprovision hook
+│       ├── preprovision.sh             # azd preprovision hook
+│       ├── postprovision.sh            # azd postprovision hook (ACR build)
+│       └── acr-build.sh                # Shared ACR Tasks build logic
 ├── src/job/
 │   ├── Dockerfile                      # Minimal CUDA + python3 image
 │   └── check-gpu.sh                    # GPU environment check script
