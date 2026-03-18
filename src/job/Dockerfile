@@ -102,20 +102,25 @@ RUN apt-get update && \
 RUN COLMAP_PATH=$(which colmap) && \
     mv "$COLMAP_PATH" "${COLMAP_PATH}.real" && \
     printf '#!/bin/bash\n\
-# colmap wrapper: injects --SiftExtraction.use_gpu 0 for feature_extractor\n\
-# and --SiftMatching.use_gpu 0 for matching commands (no OpenGL on Container Apps)\n\
 REAL_COLMAP="$(dirname "$0")/colmap.real"\n\
 if [ "${COLMAP_USE_GPU:-0}" = "0" ]; then\n\
+  ARGS=()\n\
+  SKIP_NEXT=false\n\
+  for arg in "$@"; do\n\
+    if [ "$SKIP_NEXT" = true ]; then SKIP_NEXT=false; continue; fi\n\
+    case "$arg" in\n\
+      --SiftExtraction.use_gpu|--SiftMatching.use_gpu) SKIP_NEXT=true; continue ;;\n\
+      --SiftExtraction.use_gpu=*|--SiftMatching.use_gpu=*) continue ;;\n\
+      *) ARGS+=("$arg") ;;\n\
+    esac\n\
+  done\n\
   case "${1:-}" in\n\
     feature_extractor)\n\
-      exec "$REAL_COLMAP" "$@" --SiftExtraction.use_gpu 0\n\
-      ;;\n\
+      exec "$REAL_COLMAP" "${ARGS[@]}" --SiftExtraction.use_gpu 0 ;;\n\
     exhaustive_matcher|sequential_matcher|vocab_tree_matcher|spatial_matcher|transitive_matcher)\n\
-      exec "$REAL_COLMAP" "$@" --SiftMatching.use_gpu 0\n\
-      ;;\n\
+      exec "$REAL_COLMAP" "${ARGS[@]}" --SiftMatching.use_gpu 0 ;;\n\
     *)\n\
-      exec "$REAL_COLMAP" "$@"\n\
-      ;;\n\
+      exec "$REAL_COLMAP" "${ARGS[@]}" ;;\n\
   esac\n\
 else\n\
   exec "$REAL_COLMAP" "$@"\n\
