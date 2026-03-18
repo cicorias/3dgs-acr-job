@@ -145,6 +145,25 @@ COPY config.example.yaml /config/config.example.yaml
 RUN mkdir -p /config /tmp/3dgs-work /tmp/blobfuse-cache /tmp/blobfuse-configs && \
     chmod +x /usr/local/bin/mount-azure.sh /usr/local/bin/3dgs-processor
 
+# Entrypoint wrapper: symlinks COLMAP output to where gsplat expects it
+# gsplat looks for: $TEMP_PATH/colmap/sparse/0
+# COLMAP writes to: $TEMP_PATH/reconstruction/output/sparse/0
+RUN printf '#!/bin/bash\n\
+TEMP="${TEMP_PATH:-/tmp/3dgs-work}"\n\
+# Background watcher: create symlink once COLMAP finishes\n\
+(\n\
+  while true; do\n\
+    if [ -d "$TEMP/reconstruction/output/sparse/0" ] && [ ! -L "$TEMP/colmap" ]; then\n\
+      mkdir -p "$(dirname "$TEMP/colmap")"\n\
+      ln -sfn "$TEMP/reconstruction/output" "$TEMP/colmap"\n\
+      break\n\
+    fi\n\
+    sleep 2\n\
+  done\n\
+) &\n\
+exec /usr/local/bin/3dgs-processor "$@"\n' > /usr/local/bin/entrypoint.sh && \
+    chmod +x /usr/local/bin/entrypoint.sh
+
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     LOG_LEVEL=info \
@@ -163,4 +182,4 @@ ENV PATH="/opt/venv/bin:$PATH" \
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD pgrep -f 3dgs-processor || exit 1
 
-ENTRYPOINT ["/usr/local/bin/3dgs-processor"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
