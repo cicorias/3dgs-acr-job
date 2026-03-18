@@ -97,6 +97,31 @@ RUN apt-get update && \
     ffmpeg -version > /dev/null && \
     colmap help > /dev/null 2>&1
 
+# Wrap colmap to force CPU-based SIFT (apt COLMAP needs OpenGL for GPU SIFT,
+# which is unavailable on serverless Container Apps).
+RUN COLMAP_PATH=$(which colmap) && \
+    mv "$COLMAP_PATH" "${COLMAP_PATH}.real" && \
+    printf '#!/bin/bash\n\
+# colmap wrapper: injects --SiftExtraction.use_gpu 0 for feature_extractor\n\
+# and --SiftMatching.use_gpu 0 for matching commands (no OpenGL on Container Apps)\n\
+REAL_COLMAP="$(dirname "$0")/colmap.real"\n\
+if [ "${COLMAP_USE_GPU:-0}" = "0" ]; then\n\
+  case "${1:-}" in\n\
+    feature_extractor)\n\
+      exec "$REAL_COLMAP" "$@" --SiftExtraction.use_gpu 0\n\
+      ;;\n\
+    exhaustive_matcher|sequential_matcher|vocab_tree_matcher|spatial_matcher|transitive_matcher)\n\
+      exec "$REAL_COLMAP" "$@" --SiftMatching.use_gpu 0\n\
+      ;;\n\
+    *)\n\
+      exec "$REAL_COLMAP" "$@"\n\
+      ;;\n\
+  esac\n\
+else\n\
+  exec "$REAL_COLMAP" "$@"\n\
+fi\n' > "$COLMAP_PATH" && \
+    chmod +x "$COLMAP_PATH"
+
 COPY --from=python-builder /opt/venv /opt/venv
 
 RUN cd /opt/venv/bin && \
