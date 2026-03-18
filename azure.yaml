@@ -4,13 +4,12 @@ metadata:
 services:
   job:
     host: containerapp
-    language: docker
-    project: ./src/job
-    docker:
-      path: ./Dockerfile
-      context: .
+    image: ${JOB_IMAGE}
 hooks:
   preprovision:
     shell: sh
     run: ./scripts/hooks/preprovision.sh
     continueOnError: true
+  postprovision:
+    shell: sh
+    run: ./scripts/hooks/postprovision.sh
