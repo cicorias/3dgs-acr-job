@@ -1,4 +1,2 @@
-src/job/Cargo.*
-src/job/src/
-src/job/scripts/
-src/job/config.example.yaml
+# azd
+.azure/

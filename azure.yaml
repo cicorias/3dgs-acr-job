@@ -14,7 +14,3 @@ hooks:
     shell: sh
     run: ./scripts/hooks/preprovision.sh
     continueOnError: true
-  prepackage:
-    shell: sh
-    run: ./scripts/hooks/prepackage.sh
-    continueOnError: false
