@@ -1,8 +1,10 @@
-# 3DGS Processor — Azure Container Apps Job
+# GPU Environment Check — Azure Container Apps Job
 
-Deploy the `3dgs-processor:latest` container to **Azure Container Apps Jobs** using the Azure Developer CLI (`azd`) and Bicep.
+Run a lightweight GPU validation job on **Azure Container Apps** using `azd` and Bicep.
 
-> **Source**: The container image is built from [Azure-Samples/3DGS-accelerator](https://github.com/Azure-Samples/3DGS-accelerator).
+The container image is self-contained — just `nvidia/cuda` base + shell scripts + Python stdlib.
+No ML frameworks, no external repos. Checks nvidia-smi, CUDA libraries, and runs a
+`cudaMalloc`/`cudaFree` smoke test via Python ctypes.
 
 ## Architecture
 
@@ -28,7 +30,7 @@ Deploy the `3dgs-processor:latest` container to **Azure Container Apps Jobs** us
 │  │  Container Apps Environment                    │    │
 │  │  ┌──────────────────────────────────────────┐ │    │
 │  │  │  Container Apps Job (Manual Trigger)      │ │    │
-│  │  │  └── 3dgs-processor container             │ │    │
+│  │  │  └── gpu-check container                  │ │    │
 │  │  └──────────────────────────────────────────┘ │    │
 │  └───────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────┘
@@ -38,8 +40,9 @@ Deploy the `3dgs-processor:latest` container to **Azure Container Apps Jobs** us
 
 - [Azure Developer CLI (`azd`)](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd)
 - [Azure CLI (`az`)](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
-- [Docker](https://docs.docker.com/get-docker/) with `3dgs-processor:latest` image available locally
 - An Azure subscription with **Contributor** access to create resources
+
+> **Note:** Docker is _not_ required locally — `azd deploy` builds images remotely via ACR Tasks.
 
 ## Quick Start
 
@@ -48,8 +51,8 @@ Deploy the `3dgs-processor:latest` container to **Azure Container Apps Jobs** us
 azd init
 
 # 2. Configure environment
-azd env set AZURE_LOCATION eastus2
-azd env set PROCESSOR_BACKEND mock        # mock (CPU) | gsplat | gaussian-splatting (GPU)
+azd env set AZURE_LOCATION swedencentral
+azd env set USE_GPU true
 
 # 3. Provision infrastructure + deploy container image
 azd up
@@ -60,8 +63,8 @@ azd up
 # 5. Verify RBAC assignments
 ./scripts/verify-rbac.sh
 
-# 6. Run a job
-./scripts/run-job.sh
+# 6. Run the GPU check job
+./scripts/run-job.sh --logs
 ```
 
 ## Configuration
@@ -70,9 +73,8 @@ Set these via `azd env set <KEY> <VALUE>`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AZURE_LOCATION` | — | Azure region (e.g., `eastus2`) |
-| `PROCESSOR_BACKEND` | `mock` | 3DGS backend: `mock`, `gsplat`, `gaussian-splatting` |
-| `USE_GPU` | `false` | Enable GPU workload profile (dedicated NC24-A100) |
+| `AZURE_LOCATION` | — | Azure region (e.g., `swedencentral`) |
+| `USE_GPU` | `false` | Enable GPU workload profile |
 | `USE_STORAGE_KEYS` | `false` | Use storage account keys instead of RBAC |
 
 ## Workflows
@@ -105,14 +107,14 @@ azd up
 ./scripts/run-job.sh
 ```
 
-### Scenario 3: GPU-Enabled Processing
+### Scenario 3: GPU-Enabled Check
 
 ```bash
 azd env set USE_GPU true
-azd env set PROCESSOR_BACKEND gsplat
+azd env set AZURE_LOCATION swedencentral
 azd up
 ./scripts/assign-rbac.sh
-./scripts/run-job.sh --wait --logs
+./scripts/run-job.sh --logs
 ```
 
 ### Scenario 4: Submit a Job (after azd up)
@@ -136,7 +138,20 @@ az containerapp job start \
   --resource-group <AZURE_RESOURCE_GROUP>
 ```
 
-### Scenario 5: Tear Down
+### Scenario 5: Build Image Manually via ACR
+
+If you need to rebuild the image without a full `azd deploy`:
+
+```bash
+az acr build \
+  --registry <ACR_NAME> \
+  --image gpu-check:latest \
+  --build-arg CUDA_VERSION=12.6.3 \
+  --file src/job/Dockerfile \
+  src/job/
+```
+
+### Scenario 6: Tear Down
 
 ```bash
 # Remove RBAC first (if assigned)
@@ -176,8 +191,8 @@ The storage account is created with four blob containers:
 
 | Container | Purpose |
 |-----------|---------|
-| `input` | Upload videos for processing |
-| `output` | Processed 3DGS models (.ply, .splat) |
+| `input` | Upload data for processing |
+| `output` | Job output |
 | `processed` | Archive of completed jobs |
 | `error` | Quarantine for failed processing |
 
@@ -188,6 +203,29 @@ The Managed Identity uses `DefaultAzureCredential` to access storage. The enviro
 ### Key Mode (Fallback)
 
 Run `./scripts/configure-storage-keys.sh` to retrieve the storage account key and configure it as a secret on the job. The connection string is passed via `AZURE_STORAGE_CONNECTION_STRING`.
+
+## Container Image
+
+The job image is built from `src/job/Dockerfile`. It is minimal:
+
+- **Base:** `nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04`
+- **Added:** `python3` (stdlib only — no pip, no frameworks)
+- **Entrypoint:** `check-gpu.sh` — validates nvidia-smi, CUDA libs, and runs a `cudaMalloc`/`cudaFree` smoke test
+
+No external repositories are cloned. No ML frameworks are installed.
+
+## Scripts Reference
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/assign-rbac.sh` | Assign RBAC roles (AcrPull + Blob Contributor) to MI |
+| `scripts/verify-rbac.sh` | Verify RBAC roles are assigned |
+| `scripts/cleanup-rbac.sh` | Remove RBAC role assignments |
+| `scripts/run-job.sh` | Start a Container Apps Job execution |
+| `scripts/configure-storage-keys.sh` | Fallback: configure storage account keys on the job |
+| `scripts/hooks/preprovision.sh` | azd preprovision hook (captures deployer ID, runs RBAC check) |
+| `scripts/verify-gpu.sh` | Standalone GPU verification (creates its own ACA environment) |
+| `scripts/run-preflight.sh` | ⚠️ Legacy — clones external repo for preflight (deprecated) |
 
 ## Project Structure
 
@@ -213,10 +251,13 @@ Run `./scripts/configure-storage-keys.sh` to retrieve the storage account key an
 │   ├── cleanup-rbac.sh                 # Remove RBAC roles
 │   ├── run-job.sh                      # Submit a job execution
 │   ├── configure-storage-keys.sh       # Fallback: storage keys
+│   ├── verify-gpu.sh                   # Standalone GPU verification
+│   ├── run-preflight.sh                # ⚠️ Legacy preflight (external repo)
 │   └── hooks/
 │       └── preprovision.sh             # azd preprovision hook
 ├── src/job/
-│   └── Dockerfile                      # References 3dgs-processor:latest
+│   ├── Dockerfile                      # Minimal CUDA + python3 image
+│   └── check-gpu.sh                    # GPU environment check script
 └── README.md
 ```
 
@@ -236,8 +277,8 @@ Either assign RBAC (`./scripts/assign-rbac.sh`) or use key-based access (`./scri
 
 ### GPU workload profile not available
 
-GPU profiles (`NC24-A100`) are region-dependent. Check [Azure Container Apps GPU availability](https://learn.microsoft.com/en-us/azure/container-apps/workload-profiles-overview) and try a different region.
+GPU profiles are region-dependent. Check [Azure Container Apps GPU availability](https://learn.microsoft.com/en-us/azure/container-apps/workload-profiles-overview) and try a different region (e.g., `swedencentral`).
 
 ## License
 
-See [Azure-Samples/3DGS-accelerator](https://github.com/Azure-Samples/3DGS-accelerator) for the source container license.
+[MIT](LICENSE)

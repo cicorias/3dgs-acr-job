@@ -2,23 +2,15 @@
 set -euo pipefail
 
 echo "╔══════════════════════════════════════════════════════════╗"
-echo "║           3DGS GPU Environment Check                     ║"
+echo "║              GPU Environment Check                      ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
 
 PASS=0
 FAIL=0
 
-check() {
-  local label="$1"; shift
-  if "$@" >/dev/null 2>&1; then
-    echo "  ✅ $label"
-    PASS=$((PASS + 1))
-  else
-    echo "  ❌ $label"
-    FAIL=$((FAIL + 1))
-  fi
-}
+pass() { echo "  ✅ $1"; PASS=$((PASS + 1)); }
+fail() { echo "  ❌ $1"; FAIL=$((FAIL + 1)); }
 
 # ── nvidia-smi ────────────────────────────────────────────────────────────────
 echo "GPU Hardware"
@@ -26,59 +18,81 @@ echo "────────────"
 if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
   nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader 2>/dev/null | \
     while IFS=, read -r name mem driver; do
-      echo "  ✅ GPU: $name ($mem, driver $driver)"
+      echo "  GPU: $name | $mem | driver $driver"
     done
-  PASS=$((PASS + 1))
+  pass "nvidia-smi"
 else
-  echo "  ❌ No GPU detected (nvidia-smi not available)"
-  FAIL=$((FAIL + 1))
+  fail "nvidia-smi not available"
 fi
 echo ""
 
-# ── PyTorch CUDA ──────────────────────────────────────────────────────────────
-echo "PyTorch + CUDA"
-echo "──────────────"
-python3 -c "
-import torch
-print(f'  PyTorch version : {torch.__version__}')
-print(f'  CUDA compiled   : {torch.version.cuda}')
-print(f'  CUDA available  : {torch.cuda.is_available()}')
-if torch.cuda.is_available():
-    print(f'  CUDA device     : {torch.cuda.get_device_name(0)}')
-    print(f'  CUDA devices    : {torch.cuda.device_count()}')
-    print(f'  cuDNN version   : {torch.backends.cudnn.version()}')
-    # Quick GPU compute test
-    a = torch.rand(512, 512, device='cuda')
-    b = torch.rand(512, 512, device='cuda')
-    c = torch.mm(a, b)
-    print(f'  GPU matmul test : PASS ({c.shape})')
-else:
-    print('  ⚠️  No CUDA device — running CPU-only')
+# ── CUDA libraries ────────────────────────────────────────────────────────────
+echo "CUDA Runtime"
+echo "────────────"
+if [ -d /usr/local/cuda ]; then
+  CUDA_VER=$(cat /usr/local/cuda/version.json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['cuda']['version'])" 2>/dev/null || echo "unknown")
+  pass "CUDA toolkit found (${CUDA_VER})"
+else
+  fail "CUDA toolkit not found at /usr/local/cuda"
+fi
+
+if ldconfig -p 2>/dev/null | grep -q libcudart; then
+  pass "libcudart present"
+else
+  fail "libcudart not found"
+fi
+echo ""
+
+# ── GPU compute test (pure Python + ctypes, no frameworks) ────────────────────
+echo "GPU Compute Test"
+echo "────────────────"
+if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
+  python3 -c "
+import ctypes, ctypes.util, sys
+
+# Try to load the CUDA runtime
+libname = ctypes.util.find_library('cudart')
+if not libname:
+    print('  Could not find libcudart')
+    sys.exit(1)
+
+cudart = ctypes.CDLL(libname)
+
+# Get device count
+count = ctypes.c_int(0)
+rc = cudart.cudaGetDeviceCount(ctypes.byref(count))
+if rc != 0 or count.value == 0:
+    print(f'  No CUDA devices (rc={rc}, count={count.value})')
+    sys.exit(1)
+
+print(f'  CUDA devices: {count.value}')
+
+# Allocate + free a small buffer on GPU as a smoke test
+ptr = ctypes.c_void_p()
+rc = cudart.cudaMalloc(ctypes.byref(ptr), ctypes.c_size_t(1024))
+if rc != 0:
+    print(f'  cudaMalloc failed (rc={rc})')
+    sys.exit(1)
+cudart.cudaFree(ptr)
+print('  cudaMalloc/cudaFree: OK')
 " 2>&1
-if python3 -c "import torch; assert torch.cuda.is_available()" 2>/dev/null; then
-  PASS=$((PASS + 1))
+  if [ $? -eq 0 ]; then
+    pass "GPU compute smoke test"
+  else
+    fail "GPU compute smoke test"
+  fi
 else
-  FAIL=$((FAIL + 1))
+  echo "  Skipped (no GPU)"
+  fail "GPU compute smoke test (no GPU)"
 fi
 echo ""
 
-# ── gsplat ────────────────────────────────────────────────────────────────────
-echo "gsplat (3DGS training backend)"
-echo "──────────────────────────────"
-if python3 -c "import gsplat; print(f'  gsplat version  : {gsplat.__version__}')" 2>&1; then
-  PASS=$((PASS + 1))
-else
-  echo "  ❌ gsplat not importable"
-  FAIL=$((FAIL + 1))
-fi
-echo ""
-
-# ── External tools ────────────────────────────────────────────────────────────
-echo "External Tools"
-echo "──────────────"
-check "ffmpeg"  ffmpeg -version
-check "colmap"  colmap help
-check "python3" python3 --version
+# ── Environment info ──────────────────────────────────────────────────────────
+echo "Environment"
+echo "───────────"
+echo "  Kernel : $(uname -r)"
+echo "  Arch   : $(uname -m)"
+echo "  Python : $(python3 --version 2>&1 | awk '{print $2}')"
 echo ""
 
 # ── Summary ───────────────────────────────────────────────────────────────────
@@ -90,6 +104,6 @@ if [ "$FAIL" -gt 0 ]; then
   echo "  ❌ ENVIRONMENT CHECK FAILED"
   exit 1
 else
-  echo "  ✅ ENVIRONMENT READY FOR 3DGS PROCESSING"
+  echo "  ✅ GPU ENVIRONMENT READY"
   exit 0
 fi
