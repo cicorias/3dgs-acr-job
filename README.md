@@ -137,6 +137,39 @@ azd provision
 ./scripts/run-job.sh --logs
 ```
 
+### Scenario 3b: gsplat Environment Verification
+
+Run the full gsplat + CUDA verification (`scripts/gsplat_check/main.py`) on the
+ACA GPU job. This builds a PyTorch 2.10 + CUDA 12.6 container with gsplat
+installed from `pyproject.toml`, deploys it, runs it, and shows logs — all in
+one command:
+
+```bash
+# Requires USE_GPU=true and a GPU-capable region (see Scenario 3)
+./scripts/run-gsplat-check.sh
+```
+
+The script:
+1. Builds the image remotely via ACR Tasks (no local Docker required)
+2. Updates the Container Apps Job with the new image
+3. Starts execution, waits for completion, and prints logs
+
+To re-run without rebuilding the image:
+
+```bash
+./scripts/run-gsplat-check.sh --skip-build
+```
+
+Expected output on a T4 GPU:
+
+```
+✓ CUDA GPU         Tesla T4 (16.0GB VRAM)
+✓ gsplat           1.5.3
+✓ CUDA kernels     rasterization smoke-test passed
+✓ nvidia-smi       NVIDIA-SMI 550.163.01
+✅ ENVIRONMENT CHECK PASSED
+```
+
 ### Scenario 4: Submit a Job (after azd up)
 
 ```bash
@@ -252,6 +285,7 @@ No external repositories are cloned. No ML frameworks are installed.
 | `scripts/verify-rbac.sh` | Verify RBAC roles are assigned |
 | `scripts/cleanup-rbac.sh` | Remove RBAC role assignments |
 | `scripts/run-job.sh` | Start a Container Apps Job execution |
+| `scripts/run-gsplat-check.sh` | Build, deploy, and run gsplat environment check on GPU |
 | `scripts/configure-storage-keys.sh` | Fallback: configure storage account keys on the job |
 | `scripts/hooks/preprovision.sh` | azd preprovision hook (captures deployer ID, runs RBAC check) |
 | `scripts/hooks/postprovision.sh` | azd postprovision hook (ACR build + update job) |
@@ -283,6 +317,12 @@ No external repositories are cloned. No ML frameworks are installed.
 │   ├── verify-rbac.sh                  # Verify RBAC roles (preflight)
 │   ├── cleanup-rbac.sh                 # Remove RBAC roles
 │   ├── run-job.sh                      # Submit a job execution
+│   ├── run-gsplat-check.sh             # Build + deploy + run gsplat check on GPU
+│   ├── gsplat_check/                   # gsplat environment verification
+│   │   ├── Dockerfile                  # PyTorch 2.10 + CUDA 12.6 + gsplat image
+│   │   ├── .dockerignore               # Excludes .venv, uv.lock from build
+│   │   ├── pyproject.toml              # Dependencies (gsplat, torch)
+│   │   └── main.py                     # CUDA/gsplat verification script
 │   ├── configure-storage-keys.sh       # Fallback: storage keys
 │   ├── verify-gpu.sh                   # Standalone GPU verification
 │   ├── run-preflight.sh                # ⚠️ Legacy preflight (external repo)
