@@ -1,2 +1,4 @@
 # azd
 .azure/
+
+.venv/
