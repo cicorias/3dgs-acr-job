@@ -1,10 +1,15 @@
 name: 3dgs-processor
 metadata:
   template: 3dgs-processor@0.0.1
-services:
-  job:
-    host: containerapp
-    image: ${JOB_IMAGE}
+  # removed as using hooks -- AND this requires docker local even though acr is used for build of image
+  # still need to verify if the option remoteBuild works as expected with the ACR build and if it can be used to avoid local docker dependency
+# services:
+#   job:
+#     host: containerapp
+#     image: ${JOB_IMAGE}
+#     docker:
+#       path: ./src/job
+#.      remoteBuild: true
 hooks:
   preprovision:
     shell: sh
