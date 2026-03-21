@@ -18,7 +18,7 @@ WORKDIR /app
 
 # Install dependencies via pip (no uv required)
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir --break-system-packages .
+RUN pip install --no-cache-dir --break-system-packages --root-user-action=ignore .
 
 COPY main.py ./
 
